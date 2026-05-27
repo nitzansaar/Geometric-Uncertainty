@@ -9,6 +9,7 @@ import argparse
 import sys
 import time
 
+import matplotlib.pyplot as plt
 import numpy as np
 import requests
 from sklearn.decomposition import PCA
@@ -50,6 +51,7 @@ def main():
     parser.add_argument("--embed-model", type=str, default="nomic-embed-text", help="Model to use for embeddings (default: nomic-embed-text).")
     parser.add_argument("--pca", action="store_true", help="Run PCA on collected embeddings and show 2D projections.")
     parser.add_argument("--pca-components", type=int, default=5, help="Number of PCA components (default: 5). Clamped to min(samples, features).")
+    parser.add_argument("--plot", action="store_true", help="Save a 3D scatter plot of PCA projections to pca_3d.png.")
     args = parser.parse_args()
 
     if args.temperature <= 0:
@@ -82,7 +84,11 @@ def main():
         except Exception as e:
             print(f"Error generating sample {i+1}: {e}", file=sys.stderr)
 
-    do_pca = args.pca
+    do_pca = args.pca or args.plot
+    do_plot = args.plot
+    if do_plot and args.pca_components < 3:
+        print("Note: --plot requires at least 3 PCA components; setting --pca-components to 3.", file=sys.stderr)
+        args.pca_components = 3
     if args.embed or do_pca:
         embed_model = args.embed_model
         print(f"\nGenerating embeddings using '{embed_model}'...")
@@ -125,6 +131,23 @@ def main():
             for j, (text, proj) in enumerate(zip(generated_texts, projected)):
                 preview = text[:60].replace("\n", " ")
                 print(f"  Sample {j+1}: PC1={proj[0]:+.4f}, PC2={proj[1]:+.4f}  |  \"{preview}...\"")
+
+            if do_plot:
+                fig = plt.figure(figsize=(10, 8))
+                ax = fig.add_subplot(111, projection="3d")
+                xs = projected[:, 0]
+                ys = projected[:, 1]
+                zs = projected[:, 2] if projected.shape[1] >= 3 else np.zeros_like(xs)
+                ax.scatter(xs, ys, zs, c=range(len(xs)), cmap="viridis", s=60)
+                for j in range(len(xs)):
+                    ax.text(xs[j], ys[j], zs[j], f"  {j+1}", size=10)
+                ax.set_xlabel("PC1")
+                ax.set_ylabel("PC2")
+                ax.set_zlabel("PC3")
+                ax.set_title("PCA of LLM Response Embeddings")
+                fig.savefig("pca_3d.png", dpi=150, bbox_inches="tight")
+                plt.close(fig)
+                print(f"\n3D plot saved to pca_3d.png")
 
 
 if __name__ == "__main__":
