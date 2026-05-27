@@ -9,7 +9,9 @@ import argparse
 import sys
 import time
 
+import numpy as np
 import requests
+from sklearn.decomposition import PCA
 
 DEFAULT_MODEL = "llama3.2"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
@@ -46,6 +48,8 @@ def main():
     parser.add_argument("--ollama-host", type=str, default=DEFAULT_OLLAMA_HOST, help=f"Ollama server URL (default: {DEFAULT_OLLAMA_HOST}).")
     parser.add_argument("--embed", action="store_true", help="Generate embeddings for each sampled response.")
     parser.add_argument("--embed-model", type=str, default="nomic-embed-text", help="Model to use for embeddings (default: nomic-embed-text).")
+    parser.add_argument("--pca", action="store_true", help="Run PCA on collected embeddings and show 2D projections.")
+    parser.add_argument("--pca-components", type=int, default=5, help="Number of PCA components (default: 5). Clamped to min(samples, features).")
     args = parser.parse_args()
 
     if args.temperature <= 0:
@@ -78,15 +82,18 @@ def main():
         except Exception as e:
             print(f"Error generating sample {i+1}: {e}", file=sys.stderr)
 
-    if args.embed:
+    do_pca = args.pca
+    if args.embed or do_pca:
         embed_model = args.embed_model
         print(f"\nGenerating embeddings using '{embed_model}'...")
         print("-" * 50)
+        embeddings = []
         for i, text in enumerate(generated_texts):
             try:
                 start_time = time.time()
                 embedding = query_ollama_embedding(text, embed_model, host)
                 elapsed = time.time() - start_time
+                embeddings.append(embedding)
                 dim = len(embedding)
                 preview = ", ".join(f"{v:.4f}" for v in embedding[:5])
                 print(f"Embedding {i+1}/{len(generated_texts)} (took {elapsed:.2f}s):")
@@ -95,6 +102,29 @@ def main():
                 print("-" * 50)
             except Exception as e:
                 print(f"Error generating embedding {i+1}: {e}", file=sys.stderr)
+
+        if do_pca and embeddings:
+            n_samples = len(embeddings)
+            n_features = len(embeddings[0])
+            n_components = min(n_samples, n_features, args.pca_components)
+
+            print(f"\nRunning PCA ({n_samples} samples, {n_features} dims -> {n_components} components)...")
+            print("-" * 50)
+
+            X = np.array(embeddings)
+            pca = PCA(n_components=n_components)
+            projected = pca.fit_transform(X)
+
+            print("Explained variance ratio per component:")
+            for j, ratio in enumerate(pca.explained_variance_ratio_):
+                print(f"  PC{j+1}: {ratio:.4f} ({ratio*100:.2f}%)")
+            print(f"  Cumulative: {np.sum(pca.explained_variance_ratio_):.4f} ({np.sum(pca.explained_variance_ratio_)*100:.2f}%)")
+            print()
+
+            print("2D projections (PC1 vs PC2):")
+            for j, (text, proj) in enumerate(zip(generated_texts, projected)):
+                preview = text[:60].replace("\n", " ")
+                print(f"  Sample {j+1}: PC1={proj[0]:+.4f}, PC2={proj[1]:+.4f}  |  \"{preview}...\"")
 
 
 if __name__ == "__main__":
