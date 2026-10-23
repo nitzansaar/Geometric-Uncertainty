@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import requests
 from scipy.optimize import nnls
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, QhullError
 from sklearn.decomposition import PCA
 
 DEFAULT_PROMPT = "Tell me a joke about programming"
@@ -115,9 +115,12 @@ def main():
         payload = {
             "model": args.model,
             "prompt": args.prompt,
-            "temperature": args.temperature,
-            "num_predict": args.max_new_tokens,
             "stream": False,
+            # Ollama ignores sampling settings at the top level; they must go in "options".
+            "options": {
+                "temperature": args.temperature,
+                "num_predict": args.max_new_tokens,
+            },
         }
         try:
             start_time = time.time()
@@ -178,17 +181,26 @@ def main():
 
     # --- Convex Hull of 3D PCA projections ---
     points_3d = projected[:, :3]
-    hull = ConvexHull(points_3d)
+    try:
+        hull = ConvexHull(points_3d)
+    except QhullError:
+        # Identical or near-identical responses don't span 3D, so there is no hull: zero spread.
+        hull = None
     hull_vertex_mask = np.zeros(n_samples, dtype=bool)
-    hull_vertex_mask[hull.vertices] = True
+    if hull is not None:
+        hull_vertex_mask[hull.vertices] = True
+    hull_volume = hull.volume if hull is not None else 0.0
 
     print()
     print(f"Convex hull (3D PCA space):")
-    print(f"  Volume: {hull.volume:.6f}")
-    print(f"  Surface area: {hull.area:.6f}")
-    print(f"  Vertices: {len(hull.vertices)} of {n_samples} samples")
-    hull_indices = sorted(v + 1 for v in hull.vertices)
-    print(f"  Hull sample indices: {hull_indices}")
+    if hull is None:
+        print("  Responses don't span 3D (nearly identical), so the volume is 0")
+    else:
+        print(f"  Volume: {hull.volume:.6f}")
+        print(f"  Surface area: {hull.area:.6f}")
+        print(f"  Vertices: {len(hull.vertices)} of {n_samples} samples")
+        hull_indices = sorted(v + 1 for v in hull.vertices)
+        print(f"  Hull sample indices: {hull_indices}")
 
     # --- Archetypal Analysis ---
     arch_projected = None
@@ -243,7 +255,7 @@ def main():
     interior = ~hull_vertex_mask
     ax.scatter(xs[interior], ys[interior], zs[interior], c="steelblue", s=60, label="Interior", alpha=0.5)
     ax.scatter(xs[hull_vertex_mask], ys[hull_vertex_mask], zs[hull_vertex_mask],
-               c="orange", marker="o", s=120, edgecolors="black", linewidths=0.8, label=f"Hull vertices ({len(hull.vertices)})")
+               c="orange", marker="o", s=120, edgecolors="black", linewidths=0.8, label=f"Hull vertices ({hull_vertex_mask.sum()})")
     for j in range(len(xs)):
         ax.text(xs[j], ys[j], zs[j], f"  {j+1}", size=9, color="black" if hull_vertex_mask[j] else "gray")
 
@@ -258,7 +270,7 @@ def main():
     ax.set_xlabel("PC1")
     ax.set_ylabel("PC2")
     ax.set_zlabel("PC3")
-    ax.set_title(f"LLM Response Embeddings  |  Hull vol={hull.volume:.4f}")
+    ax.set_title(f"LLM Response Embeddings  |  Hull vol={hull_volume:.4f}")
     ax.legend()
     fig.savefig(args.output, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -266,6 +278,10 @@ def main():
     print(f"Plot saved to {args.output}")
 
     # --- Convex Hull Plot ---
+    if hull is None:
+        print("No convex hull to plot")
+        return
+
     fig2 = plt.figure(figsize=(12, 9))
     ax2 = fig2.add_subplot(111, projection="3d")
 

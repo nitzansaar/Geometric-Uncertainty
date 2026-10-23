@@ -8,7 +8,7 @@ A tool for detecting LLM hallucination by analyzing the geometric structure of r
 2. **Embed** — Convert each response to a high-dimensional embedding vector (via `nomic-embed-text`)
 3. **PCA** — Project embeddings into 3D principal component space
 4. **Archetypal Analysis** — Find extreme "archetype" responses (corners of the response distribution) using alternating Non-Negative Least Squares (NNLS)
-5. **Convex Hull** — Compute the convex hull of archetypes in 3D PCA space; hull volume and surface area quantify uncertainty geometrically
+5. **Convex Hull** — Compute the convex hull of all responses in 3D PCA space; hull volume and surface area quantify uncertainty geometrically, and the archetypes are plotted alongside it
 
 Larger hull volume = higher response variance = greater uncertainty = higher hallucination risk.
 
@@ -17,7 +17,7 @@ Larger hull volume = higher response variance = greater uncertainty = higher hal
 ### 3D PCA Embedding Space
 ![PCA 3D Scatter](pca_3d.png)
 
-### Convex Hull of Archetypes
+### Convex Hull of Responses
 ![Convex Hull](convex_hull.png)
 
 ### Combined View
@@ -29,7 +29,7 @@ Larger hull volume = higher response variance = greater uncertainty = higher hal
 # Install dependencies
 pip install -r requirements.txt
 
-# Run with default settings (100 samples, llama3.2, 12 archetypes)
+# Run with default settings (100 samples, llama3.2, 4 archetypes)
 python3 sample.py
 
 # Custom prompt and parameters
@@ -47,13 +47,16 @@ python3 sample.py --archetypes 8
 | `--n` | 100 | Number of response samples to generate |
 | `--model` | `llama3.2` | Ollama model name |
 | `--temperature` | 0.8 | Sampling temperature (higher = more random) |
-| `--archetypes` | 12 | Number of archetypes for analysis |
+| `--max_new_tokens` | 100 | Maximum tokens generated per response |
+| `--embed-model` | `nomic-embed-text` | Ollama embedding model |
+| `--archetypes` | 4 | Number of archetypes for analysis (0 to skip) |
+| `--output` | `pca_3d.png` | Filename for the 3D scatter plot |
 | `--ollama-host` | `http://localhost:11434` | Ollama server URL |
 
 ## Key Techniques
 
 - **Archetypal Analysis** — custom implementation via alternating NNLS (Non-Negative Least Squares), finding extreme points that best explain the data as convex combinations
-- **Convex Hull Geometry** — uses `scipy.spatial.ConvexHull` to compute the volume and surface area of the archetype polytope in PCA space as a scalar uncertainty metric
+- **Convex Hull Geometry** — uses `scipy.spatial.ConvexHull` to compute the volume and surface area of the response polytope in PCA space as a scalar uncertainty metric
 - **PCA Dimensionality Reduction** — projects high-dimensional embeddings into 3 principal components for visualization and geometric analysis
 
 ## Requirements
